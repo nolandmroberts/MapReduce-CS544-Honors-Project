@@ -73,7 +73,7 @@ def _records(shared_dir, segment):
                 if line.endswith(b"\r"):
                     line = line[:-1]
             value = line.decode("utf-8")
-            if Path(relative_path).suffix == ".jsonl":
+            if relative_path.endswith(".jsonl"):
                 value = json.loads(value)
             # The original file and byte offset identify the mapper's input record.
             yield f"{relative_path}:{offset}", value

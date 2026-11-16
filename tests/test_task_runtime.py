@@ -99,9 +99,10 @@ def test_every_byte_split_preserves_lines_and_offsets(tmp_path):
         assert sorted(actual) == sorted(expected)
 
 
-def test_jsonl_parses_values(tmp_path):
+@pytest.mark.parametrize("filename", ["input.jsonl", ".jsonl"])
+def test_jsonl_parses_values(tmp_path, filename):
     job_dir = prepare_job(tmp_path)
-    relative = "inputs/sample/input.jsonl"
+    relative = f"inputs/sample/{filename}"
     data = b'{"message":"hello"}\n[1,2]\n'
     (tmp_path / relative).write_bytes(data)
     run_task(tmp_path, map_assignment(0, [dict(path=relative, start=0, end=len(data))]))

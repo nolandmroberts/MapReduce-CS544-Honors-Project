@@ -67,7 +67,7 @@ def iter_input_records(input_dir):
         with open(path, "rb") as f:
             for raw in f:
                 text = raw.decode("utf-8")
-                if path.suffix == ".jsonl":
+                if path.name.endswith(".jsonl"):
                     value = json.loads(text)
                 else:
                     value = text.rstrip("\r\n")
@@ -326,19 +326,20 @@ def experiment_parallelism(args, expected):
 def experiment_speculation(args, expected):
     for delay in args.delays:
         scale_workers(3, args.settle)
-        container = run(["docker", "compose", "run", "-d", "--no-deps",
-                         "-e", f"TASK_DELAY_SECONDS={delay}", "worker"]).stdout.strip().splitlines()[-1]
-        try:
-            wait_for_worker_id(container)
-            time.sleep(args.settle)
-            for rep in range(1, args.reps + 1):
-                for speculation in (True, False):
+        for rep in range(1, args.reps + 1):
+            for speculation in (True, False):
+                # A slow attempt can still be running when its backup wins.
+                container = run(["docker", "compose", "run", "-d", "--no-deps",
+                                 "-e", f"TASK_DELAY_SECONDS={delay}", "worker"]).stdout.strip().splitlines()[-1]
+                try:
+                    wait_for_worker_id(container)
+                    time.sleep(args.settle)
                     row = run_job(args, "speculation", rep, 4, expected,
                                   speculation=speculation, delay_s=delay)
                     append_row(args.csv, row)
                     save_timeline(row["job_id"])
-        finally:
-            run(["docker", "rm", "-f", container], check=False)
+                finally:
+                    run(["docker", "rm", "-f", container], check=False)
     scale_workers(4, args.settle)
 
 

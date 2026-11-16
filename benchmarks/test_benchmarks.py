@@ -3,6 +3,7 @@
 import csv
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,7 +19,7 @@ def shared(tmp_path):
     upload = tmp_path / "shared" / "inputs" / "sample"
     (upload / "more").mkdir(parents=True)
     (upload / "a.txt").write_bytes(b"hello world\r\nhello\n")
-    (upload / "more" / "b.jsonl").write_text('"world again"\n', encoding="utf-8")
+    (upload / "more" / ".jsonl").write_text('"world again"\n', encoding="utf-8")
     return tmp_path / "shared"
 
 
@@ -57,7 +58,7 @@ def test_input_records_match_the_worker_contract(shared):
     assert records == [
         ("inputs/sample/a.txt:0", "hello world"),
         ("inputs/sample/a.txt:13", "hello"),
-        ("inputs/sample/more/b.jsonl:0", "world again"),
+        ("inputs/sample/more/.jsonl:0", "world again"),
     ]
 
 
@@ -115,6 +116,32 @@ def test_directory_bytes(tmp_path):
 
     assert rb.directory_bytes(tmp_path / "map") == 15
     assert rb.directory_bytes(tmp_path / "missing") == 0
+
+
+def test_speculation_starts_a_fresh_delayed_worker_for_each_run(monkeypatch, tmp_path):
+    started, measured, removed = [], [], []
+
+    def docker(args, **kwargs):
+        if args[:3] == ["docker", "compose", "run"]:
+            worker = f"worker-{len(started)}"
+            started.append(worker)
+            return SimpleNamespace(stdout=worker)
+        assert args[:3] == ["docker", "rm", "-f"]
+        removed.append(args[-1])
+
+    def measure(*args, **kwargs):
+        measured.append((started[-1], kwargs["speculation"]))
+        return {"job_id": f"job-{len(measured)}"}
+
+    monkeypatch.setattr(rb, "run", docker)
+    monkeypatch.setattr(rb, "scale_workers", lambda *args: None)
+    monkeypatch.setattr(rb, "wait_for_worker_id", lambda worker: worker)
+    monkeypatch.setattr(rb, "run_job", measure)
+    monkeypatch.setattr(rb, "save_timeline", lambda job_id: None)
+    rb.experiment_speculation(SimpleNamespace(delays=[5], reps=1, settle=0, csv=tmp_path / "spec.csv"), {})
+
+    assert measured == [("worker-0", True), ("worker-1", False)]
+    assert removed == started == ["worker-0", "worker-1"]
 
 
 # ---------------------------------------------------------------------------

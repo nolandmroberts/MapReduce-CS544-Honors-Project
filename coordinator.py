@@ -24,7 +24,7 @@ def job_splits(shared_dir, input_name, maps):
     files = []
     total = 0
     for path in sorted(input_dir.rglob("*"), key=lambda item: item.as_posix()):
-        if path.suffix in (".txt", ".jsonl") and not path.is_symlink() and path.is_file():
+        if path.name.endswith((".txt", ".jsonl")) and not path.is_symlink() and path.is_file():
             end = total + path.stat().st_size
             files.append((path.relative_to(shared_dir).as_posix(), total, end))
             total = end

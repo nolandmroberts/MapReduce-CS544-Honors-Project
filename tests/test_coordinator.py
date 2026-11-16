@@ -87,7 +87,7 @@ def test_upload_splits_cross_files_and_job_is_saved(app, tmp_path):
 def test_more_maps_than_bytes_including_empty_input(app, tmp_path, content, expected):
     directory = tmp_path / "inputs" / "tiny"
     directory.mkdir()
-    (directory / "tiny.txt").write_bytes(content)
+    (directory / ".txt").write_bytes(content)
     client = app.test_client()
     assert submit(client, input="tiny", maps=3).status_code == 201
     actual = []

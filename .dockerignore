@@ -1,0 +1,9 @@
+.git
+.github
+shared
+benchmarks
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+venv

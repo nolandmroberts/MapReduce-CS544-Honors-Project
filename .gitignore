@@ -3,6 +3,11 @@
 shared/*
 !shared/.gitkeep
 
+# Generated benchmark inputs and cached reference results (results CSVs and
+# plots are committed).
+benchmarks/data/
+benchmarks/results/cache/
+
 __pycache__/
 *.pyc
 .pytest_cache/

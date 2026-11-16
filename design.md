@@ -96,13 +96,18 @@ shared/
   outputs/<name>/part-<j>.jsonl          final output, one file per reduce task
 ```
 
-**Input splits.** The coordinator lists every file under the input path and divides the total size into M byte ranges of about the same size, where M is the requested number of map tasks. A range can cover parts of several files. To avoid cutting a record in half, a map task skips the partial line at the start of each file segment (unless the segment starts at the beginning of the file) and reads past the end of its range to finish its last line. This way every line is read by exactly one map task. If M is larger than the number of lines, the extra map tasks simply produce empty output.
+**Input splits.** The coordinator lists every file under the input path and divides the total size into M byte ranges of about the same size, where M is the requested number of map tasks. A range can cover parts of several files. To avoid cutting a record in half, a map task owns a line exactly when the line's **first byte** falls in its range `[start, end)`. For each file segment: if `start > 0` and byte `start - 1` is not a newline, the task is starting mid-line, so it discards that partial line. Otherwise, the segment starts exactly at the beginning of a line and the task reads from `start`. It keeps starting new lines while its offset is below `end`, and reads each one in full through its newline or the end of the file, even past `end`. This way every line is read by exactly one map task. If M is larger than the number of lines, the extra map tasks simply produce empty output.
 
 **Partitioning.** Each map task writes a separate intermediate file for each reduce partition. The partition is `zlib.crc32(key.encode()) % R`. We cannot use Python's built-in `hash()`, because it is randomized differently in each process, so two workers would disagree about where a key belongs.
 
 **Reduce.** Reduce task `j` reads `r-<j>.jsonl` from every map task, sorts the pairs by key in memory, groups them, and calls `reduce` once per key. Sorting in memory is fine for the data sizes we will demo (up to a few hundred MB). External sorting is out of scope.
 
-**Committing results.** Each attempt writes into its own `tmp/<task>-<attempt>/` folder and then reports success. If the task has not been committed yet, the coordinator renames that folder to the task's final location. Since everything is on one filesystem, the rename is atomic. Output from any later attempt is deleted. Retries and duplicate attempts therefore can never double-count results.
+**Committing results.** Each attempt writes into its own `tmp/<task>-<attempt>/` folder and then reports success. A map attempt writes one `r-<j>.jsonl` file per partition there, and a reduce attempt writes a single `part.jsonl`. Commits happen under one coordinator lock: the coordinator checks that the attempt is still live and belongs to the reporting worker, publishes its output, and then records it as the task's winner.
+
+- **Map:** the coordinator renames the attempt's folder to `map/m-<i>/`.
+- **Reduce:** the coordinator renames the attempt's `part.jsonl` to `outputs/<name>/part-<j>.jsonl`, so each reducer publishes its own file.
+
+Since everything is on one filesystem, each rename is atomic. A report from an attempt that has expired, or from a task that was already committed, is treated as stale and leaves the committed files alone. Retries and duplicate attempts therefore can never double-count results.
 
 ## Special features
 
@@ -110,7 +115,7 @@ shared/
 
 **2. Worker failure recovery.** Workers send a heartbeat every 2 seconds. If a worker has not sent one for 10 seconds, the coordinator marks it dead and puts its running tasks back in the queue so another worker can run them. Unlike in the original MapReduce, finished map tasks do not need to be re-run, because their output is on shared storage rather than on the dead worker's disk. If a worker that was marked dead comes back and reports a result, the result is accepted only if that task has not been committed yet.
 
-**3. Combiners.** If the job file defines `combine`, a map task keeps its output in memory per partition, groups it by key, and runs `combine` before writing the intermediate files. For word count, this replaces many `("the", 1)` pairs with a single `("the", n)` pair per map task, which shrinks the data the reducers have to read. The `--no-combine` flag turns this off for comparison.
+**3. Combiners.** If the job file defines `combine`, a map task keeps its output in memory per partition, groups it by key, and runs `combine` before writing the intermediate files. For word count, this replaces many `("the", 1)` pairs with a single `("the", n)` pair per map task, which shrinks the data the reducers have to read. Because combining happens after partitioning, `combine` must yield the **same key** it was given; a different key could belong to another reducer's partition, so the worker treats a changed key as an attempt failure. Its values must also be something `reduce` can consume in place of the original values, for example partial sums. The `--no-combine` flag turns this off for comparison.
 
 We will keep these features limited to task attempts and retries. Recovering from a coordinator crash is outside the scope of this project.
 
@@ -125,9 +130,9 @@ We will use pytest for unit tests and run end-to-end tests with Docker Compose. 
 - Invalid job options and errors in user-provided functions.
 - Killing a worker while a job is running, then checking that the task is retried.
 - Slowing down one worker, then checking that speculation does not create duplicate results.
-- Input splits: across all splits, every line is read exactly once, including lines that cross a split boundary and files that end without a newline.
+- Input splits: across all splits, every line is read exactly once. This includes a split that starts exactly at the beginning of a line, a split that starts mid-line, and a file that ends without a newline.
 - Partitioning is stable across processes: the same key maps to the same partition in two separate Python interpreters.
-- Running with and without the combiner gives the same output.
+- Running with and without the combiner gives the same output, and a combiner that changes a key fails the attempt.
 
 We will also add GitHub Actions to run tests on pull requests.
 

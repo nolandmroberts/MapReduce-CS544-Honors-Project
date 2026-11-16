@@ -1,0 +1,25 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      # Docker end-to-end tests only run when RUN_COMPOSE_TESTS=1, so this job
+      # runs the unit tests.
+      - name: Run tests
+        run: python -m pytest -q

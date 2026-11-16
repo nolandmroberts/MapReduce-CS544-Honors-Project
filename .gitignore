@@ -1,0 +1,10 @@
+# Shared storage is local data, but keep the folder itself so Docker does not
+# create it as root on first start.
+shared/*
+!shared/.gitkeep
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/

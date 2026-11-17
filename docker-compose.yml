@@ -1,0 +1,28 @@
+services:
+  coordinator:
+    build: .
+    image: mapreduce
+    command: ["python", "coordinator.py"]
+    environment:
+      SHARED_DIR: /shared
+    volumes:
+      - ./shared:/shared
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  worker:
+    build: .
+    image: mapreduce
+    command: ["python", "worker.py"]
+    environment:
+      SHARED_DIR: /shared
+      COORDINATOR_URL: http://coordinator:8080
+      TASK_DELAY_SECONDS: "0"
+    volumes:
+      - ./shared:/shared
+    # Each worker gets one CPU, so a job only runs faster by spreading tasks
+    # across workers. Change the count with: docker compose up -d --scale worker=N
+    cpus: 1
+    scale: 4
+    depends_on:
+      - coordinator
